@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
 	"sync"
 )
 
@@ -25,7 +29,7 @@ func (s *store) createSnippet(content string) string {
 	s.Lock()
 	defer s.Unlock()
 
-	id := fmt.Sprintf("%d", s.counter)
+	id := strconv.Itoa(s.counter)
 	s.snippets[id] = content
 	s.counter++
 	return id
@@ -63,32 +67,37 @@ func (s *store) deleteSnippet(id string) bool {
 
 func main() {
 	s := newStore()
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Path[1:]
+
 		switch r.Method {
 		case http.MethodPost:
-			body, err := ioutil.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, "Failed to read request body", http.StatusBadRequest)
 				return
 			}
 			id := s.createSnippet(string(body))
-			fmt.Fprintf(w, "http://localhost:8080/%s\n", id)
+			url := "http://localhost:8080/" + id
+			w.Header().Set("Location", url)
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintln(w, url)
 
 		case http.MethodPut:
-			id := r.URL.Path[1:]
-			body, err := ioutil.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, "Failed to read request body", http.StatusBadRequest)
 				return
 			}
 			if s.updateSnippet(id, string(body)) {
-				fmt.Fprintf(w, "Updated snippet at http://localhost:8080/%s\n", id)
+				url := "http://localhost:8080/" + id
+				fmt.Fprintln(w, url)
 			} else {
 				http.NotFound(w, r)
 			}
 
 		case http.MethodGet:
-			id := r.URL.Path[1:]
 			if content, ok := s.getSnippet(id); ok {
 				fmt.Fprint(w, content)
 			} else {
@@ -96,9 +105,8 @@ func main() {
 			}
 
 		case http.MethodDelete:
-			id := r.URL.Path[1:]
 			if s.deleteSnippet(id) {
-				fmt.Fprintf(w, "Deleted snippet %s\n", id)
+				fmt.Fprintf(w, "Deleted %s", id)
 			} else {
 				http.NotFound(w, r)
 			}
@@ -108,8 +116,23 @@ func main() {
 		}
 	})
 
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
 	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	log.Println("Shutting down server...")
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Fatalf("Server Shutdown Failed:%+v", err)
+	}
+	log.Println("Server exited properly")
 }
