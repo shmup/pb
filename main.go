@@ -1,3 +1,13 @@
+// Simple HTTP CRUD API for managing text snippets.
+//
+// This program creates an in-memory snippet store with CRUD operations exposed over HTTP.
+// Supported methods:
+// - POST to create a new snippet
+// - GET to retrieve an existing snippet by ID
+// - PUT to update an existing snippet by ID
+// - DELETE to remove an existing snippet by ID
+//
+// The server starts on port 8080 and responds to the above HTTP methods at the root path.
 package main
 
 import (
@@ -25,48 +35,48 @@ func newStore() *store {
 	}
 }
 
-func (s *store) createSnippet(content string) string {
-	s.Lock()
-	defer s.Unlock()
+func (ps *store) createSnippet(content string) string {
+	ps.Lock()
+	defer ps.Unlock()
 
-	id := strconv.Itoa(s.counter)
-	s.snippets[id] = content
-	s.counter++
+	id := strconv.Itoa(ps.counter)
+	ps.snippets[id] = content
+	ps.counter++
 	return id
 }
 
-func (s *store) getSnippet(id string) (string, bool) {
-	s.Lock()
-	defer s.Unlock()
+func (ps *store) getSnippet(id string) (string, bool) {
+	ps.Lock()
+	defer ps.Unlock()
 
-	content, ok := s.snippets[id]
+	content, ok := ps.snippets[id]
 	return content, ok
 }
 
-func (s *store) updateSnippet(id, content string) bool {
-	s.Lock()
-	defer s.Unlock()
+func (ps *store) updateSnippet(id, content string) bool {
+	ps.Lock()
+	defer ps.Unlock()
 
-	if _, exists := s.snippets[id]; !exists {
+	if _, exists := ps.snippets[id]; !exists {
 		return false
 	}
-	s.snippets[id] = content
+	ps.snippets[id] = content
 	return true
 }
 
-func (s *store) deleteSnippet(id string) bool {
-	s.Lock()
-	defer s.Unlock()
+func (ps *store) deleteSnippet(id string) bool {
+	ps.Lock()
+	defer ps.Unlock()
 
-	if _, exists := s.snippets[id]; !exists {
+	if _, exists := ps.snippets[id]; !exists {
 		return false
 	}
-	delete(s.snippets, id)
+	delete(ps.snippets, id)
 	return true
 }
 
 func main() {
-	s := newStore()
+	ps := newPermanentStore()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Path[1:]
@@ -78,7 +88,7 @@ func main() {
 				http.Error(w, "Failed to read request body", http.StatusBadRequest)
 				return
 			}
-			id := s.createSnippet(string(body))
+			id := ps.createSnippet(string(body))
 			url := "http://localhost:8080/" + id
 			w.Header().Set("Location", url)
 			w.WriteHeader(http.StatusCreated)
@@ -90,7 +100,7 @@ func main() {
 				http.Error(w, "Failed to read request body", http.StatusBadRequest)
 				return
 			}
-			if s.updateSnippet(id, string(body)) {
+			if ps.updateSnippet(id, string(body)) {
 				url := "http://localhost:8080/" + id
 				fmt.Fprintln(w, url)
 			} else {
@@ -98,15 +108,15 @@ func main() {
 			}
 
 		case http.MethodGet:
-			if content, ok := s.getSnippet(id); ok {
+			if content, ok := ps.getSnippet(id); ok {
 				fmt.Fprint(w, content)
 			} else {
 				http.NotFound(w, r)
 			}
 
 		case http.MethodDelete:
-			if s.deleteSnippet(id) {
-				fmt.Fprintf(w, "Deleted %s", id)
+			if ps.deleteSnippet(id) {
+				fmt.Fprintf(w, "Deleted %ps", id)
 			} else {
 				http.NotFound(w, r)
 			}
