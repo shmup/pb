@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 )
 
@@ -33,46 +32,6 @@ func newStore() *store {
 		snippets: make(map[string]string),
 		counter:  1,
 	}
-}
-
-func (ps *store) createSnippet(content string) string {
-	ps.Lock()
-	defer ps.Unlock()
-
-	id := strconv.Itoa(ps.counter)
-	ps.snippets[id] = content
-	ps.counter++
-	return id
-}
-
-func (ps *store) getSnippet(id string) (string, bool) {
-	ps.Lock()
-	defer ps.Unlock()
-
-	content, ok := ps.snippets[id]
-	return content, ok
-}
-
-func (ps *store) updateSnippet(id, content string) bool {
-	ps.Lock()
-	defer ps.Unlock()
-
-	if _, exists := ps.snippets[id]; !exists {
-		return false
-	}
-	ps.snippets[id] = content
-	return true
-}
-
-func (ps *store) deleteSnippet(id string) bool {
-	ps.Lock()
-	defer ps.Unlock()
-
-	if _, exists := ps.snippets[id]; !exists {
-		return false
-	}
-	delete(ps.snippets, id)
-	return true
 }
 
 func main() {

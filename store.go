@@ -1,11 +1,7 @@
-// permanentStore is a content-addressable storage system that uniquely identifies
-// and stores content. It generates sequential alphanumeric IDs for new content,
-// which are then mapped to SHA256 hashes representing the content itself.
-// These hashes serve as filenames in the filesystem. When a piece of content is updated,
-// its hash may change, but its ID remains consistent. If a hash collision occurs,
-// indicating identical content, the existing ID is reused, avoiding duplication.
-// The mapping of IDs to hashes is maintained in 'index.txt', providing persistence
-// across sessions. The store supports basic CRUD operations for content snippets.
+// Package main implements a thread-safe permanent storage system for managing
+// text snippets. It features an index to track stored snippets by unique IDs,
+// file-based persistence, and content deduplication using SHA-256 hashing.
+// Supports create, read, update, and delete (CRUD) operations.
 package main
 
 import (
@@ -100,7 +96,6 @@ func (ps *permanentStore) generateID() string {
 		for _, idx := range indices {
 			id, err := baseN(idx, idChars, length)
 			if err != nil {
-				// Handle the error, for example, log it, and continue with the next index
 				log.Println(err)
 				continue
 			}
@@ -133,17 +128,15 @@ func (ps *permanentStore) createSnippet(content string) string {
 	ps.index[id] = hash
 	ps.Unlock()
 	ps.saveIndex()
-	ps.saveSnippet(hash, content)
+	ps.saveSnippet(id, content)
 	return id
 }
 
-func (ps *permanentStore) saveSnippet(hash, content string) {
-	filePath := filepath.Join(baseDir, hash)
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		err = os.WriteFile(filePath, []byte(content), 0644)
-		if err != nil {
-			panic("unable to write snippet file: " + err.Error())
-		}
+func (ps *permanentStore) saveSnippet(id, content string) {
+	filePath := filepath.Join(baseDir, id)
+	err := os.WriteFile(filePath, []byte(content), 0644)
+	if err != nil {
+		panic("unable to write snippet file: " + err.Error())
 	}
 }
 
@@ -151,12 +144,12 @@ func (ps *permanentStore) getSnippet(id string) (string, bool) {
 	ps.RLock()
 	defer ps.RUnlock()
 
-	hash, exists := ps.index[id]
+	_, exists := ps.index[id]
 	if !exists {
 		return "", false
 	}
 
-	content, err := os.ReadFile(filepath.Join(baseDir, hash))
+	content, err := os.ReadFile(filepath.Join(baseDir, id))
 	if err != nil {
 		return "", false
 	}
@@ -165,29 +158,23 @@ func (ps *permanentStore) getSnippet(id string) (string, bool) {
 
 func (ps *permanentStore) updateSnippet(id, newContent string) bool {
 	ps.Lock()
-	defer ps.Unlock()
-
-	hash, exists := ps.index[id]
+	_, exists := ps.index[id]
 	if !exists {
+		ps.Unlock()
 		return false
 	}
-
 	newHash := contentHash(newContent)
-	if hash == newHash {
-		return true // Content is identical, no need to update
-	}
-
-	// Check if another snippet is using the same hash before deleting the old file
-	for _, h := range ps.index {
-		if h == hash {
-			os.Remove(filepath.Join(baseDir, hash)) // Only delete if no other snippet uses this hash
-			break
-		}
+	oldHash := ps.index[id]
+	if oldHash == newHash {
+		ps.Unlock()
+		return true
 	}
 
 	ps.index[id] = newHash
+	ps.Unlock()
+
 	ps.saveIndex()
-	ps.saveSnippet(newHash, newContent)
+	ps.saveSnippet(id, newContent)
 
 	return true
 }
@@ -196,21 +183,21 @@ func (ps *permanentStore) deleteSnippet(id string) bool {
 	ps.Lock()
 	defer ps.Unlock()
 
-	hash, exists := ps.index[id]
+	_, exists := ps.index[id]
 	if !exists {
 		return false
 	}
 
 	delete(ps.index, id)
 	ps.saveIndex()
-	err := os.Remove(filepath.Join(baseDir, hash))
+	err := os.Remove(filepath.Join(baseDir, id))
 	return err == nil
 }
 
 func contentHash(content string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(content))
-	return hex.EncodeToString(hasher.Sum(nil)) // Changed to hexadecimal encoding
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 func intPow(base, exp int) int {
