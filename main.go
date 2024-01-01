@@ -70,6 +70,7 @@ func main() {
 
 		case http.MethodGet:
 			if content, ok := ps.getSnippet(id); ok {
+				w.Header().Set("Content-Type", "text/plain")
 				fmt.Fprint(w, content)
 				log.Printf("Fetched %s", id)
 			} else {
