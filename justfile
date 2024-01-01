@@ -1,5 +1,5 @@
 run:
-  go run main.go store.go
+  go run .
 
 clean:
   rm -rf data
