@@ -181,17 +181,24 @@ func (ps *permanentStore) updateSnippet(id, newContent string) bool {
 
 func (ps *permanentStore) deleteSnippet(id string) bool {
 	ps.Lock()
-	defer ps.Unlock()
-
 	_, exists := ps.index[id]
 	if !exists {
+		ps.Unlock()
 		return false
 	}
 
 	delete(ps.index, id)
+	ps.Unlock()
+
 	ps.saveIndex()
-	err := os.Remove(filepath.Join(baseDir, id))
-	return err == nil
+
+	go func() {
+		if err := os.Remove(filepath.Join(baseDir, id)); err != nil {
+			log.Printf("Failed to remove file: %v", err)
+		}
+	}()
+
+	return true
 }
 
 func contentHash(content string) string {
