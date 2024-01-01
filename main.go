@@ -49,6 +49,7 @@ func main() {
 			}
 			id := ps.createSnippet(string(body))
 			url := "http://localhost:8080/" + id
+			log.Printf("Created: %s", url)
 			w.Header().Set("Location", url)
 			w.WriteHeader(http.StatusCreated)
 			fmt.Fprintln(w, url)
@@ -62,6 +63,7 @@ func main() {
 			if ps.updateSnippet(id, string(body)) {
 				url := "http://localhost:8080/" + id
 				fmt.Fprintln(w, url)
+				log.Printf("Updated %s", id)
 			} else {
 				http.NotFound(w, r)
 			}
@@ -69,13 +71,14 @@ func main() {
 		case http.MethodGet:
 			if content, ok := ps.getSnippet(id); ok {
 				fmt.Fprint(w, content)
+				log.Printf("Fetched %s", id)
 			} else {
 				http.NotFound(w, r)
 			}
 
 		case http.MethodDelete:
 			if ps.deleteSnippet(id) {
-				fmt.Fprintf(w, "Deleted %ps", id)
+				log.Printf("Deleted %s", id)
 			} else {
 				http.NotFound(w, r)
 			}
@@ -84,6 +87,8 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+
+	log.Println("Server is running on http://localhost:8080")
 
 	srv := &http.Server{
 		Addr:    ":8080",
