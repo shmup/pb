@@ -34,6 +34,14 @@ func newStore() *store {
 	}
 }
 
+func constructURL(r *http.Request, id string) string {
+	scheme := "http://"
+	if r.TLS != nil {
+		scheme = "https://"
+	}
+	return fmt.Sprintf("%s%s/%s", scheme, r.Host, id)
+}
+
 func main() {
 	ps := newPermanentStore()
 	mux := http.NewServeMux()
@@ -48,7 +56,7 @@ func main() {
 				return
 			}
 			id := ps.createSnippet(string(body))
-			url := "http://localhost:8080/" + id
+			url := constructURL(r, id)
 			log.Printf("Created: %s", url)
 			w.Header().Set("Location", url)
 			w.WriteHeader(http.StatusCreated)
@@ -61,7 +69,7 @@ func main() {
 				return
 			}
 			if ps.updateSnippet(id, string(body)) {
-				url := "http://localhost:8080/" + id
+				url := constructURL(r, id)
 				fmt.Fprintln(w, url)
 				log.Printf("Updated %s", id)
 			} else {
