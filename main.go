@@ -35,11 +35,7 @@ func newStore() *store {
 }
 
 func constructURL(r *http.Request, id string) string {
-	scheme := "http://"
-	if r.TLS != nil {
-		scheme = "https://"
-	}
-	return fmt.Sprintf("%s%s/%s", scheme, r.Host, id)
+	return fmt.Sprintf("%s%s/%s", "https://", r.Host, id)
 }
 
 func main() {
