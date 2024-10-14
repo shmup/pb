@@ -56,7 +56,7 @@ func main() {
 			log.Printf("Created: %s", url)
 			w.Header().Set("Location", url)
 			w.WriteHeader(http.StatusCreated)
-			fmt.Fprintln(w, url)
+			fmt.Fprint(w, url)
 
 		case http.MethodPut:
 			body, err := io.ReadAll(r.Body)
@@ -66,7 +66,7 @@ func main() {
 			}
 			if ps.updateSnippet(id, string(body)) {
 				url := constructURL(r, id)
-				fmt.Fprintln(w, url)
+				fmt.Fprint(w, url)
 				log.Printf("Updated %s", id)
 			} else {
 				http.NotFound(w, r)
@@ -74,7 +74,7 @@ func main() {
 
 		case http.MethodGet:
 			if content, ok := ps.getSnippet(id); ok {
-				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				fmt.Fprint(w, content)
 				log.Printf("Fetched %s", id)
 			} else {
@@ -83,6 +83,8 @@ func main() {
 
 		case http.MethodDelete:
 			if ps.deleteSnippet(id) {
+				url := constructURL(r, id)
+				fmt.Fprint(w, url)
 				log.Printf("Deleted %s", id)
 			} else {
 				http.NotFound(w, r)
