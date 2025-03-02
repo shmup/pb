@@ -77,7 +77,7 @@ func (ps *permanentStore) saveIndex() {
 }
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func (ps *permanentStore) generateID() string {
