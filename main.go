@@ -13,11 +13,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 )
 
@@ -40,8 +42,32 @@ func constructURL(r *http.Request, id string) string {
 func main() {
 	ps := newStore()
 	mux := http.NewServeMux()
+
+	fs := http.FileServer(http.Dir("./static"))
+	mux.Handle("/static/", http.StripPrefix("/static/", fs))
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		id := r.URL.Path[1:]
+
+		path := r.URL.Path[1:]
+
+		// Check if this is a syntax highlighting request
+		parts := strings.SplitN(path, "/", 2)
+		if len(parts) == 2 {
+			id := parts[0]
+			language := parts[1]
+
+			if content, ok := ps.getSnippet(id); ok {
+				// Serve with syntax highlighting
+				serveWithHighlighting(w, content, language)
+				log.Printf("Fetched %s with %s highlighting", id, language)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+
+		// Original CRUD logic continues here
+		id := path
 
 		switch r.Method {
 		case http.MethodPost:
@@ -115,4 +141,36 @@ func main() {
 		log.Fatalf("Server Shutdown Failed:%+v", err)
 	}
 	log.Println("Server exited properly")
+}
+
+func serveWithHighlighting(w http.ResponseWriter, content, language string) {
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="/static/tomorrow-night-bright.min.css">
+    <script src="/static/highlight.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000; color: #fff; }
+        pre { margin: 0; padding: 0; }
+	::selection {
+	  background-color: white;
+	  color: black;
+	}
+        @font-face {
+            font-family: 'Source Code Pro';
+            font-style: normal;
+            font-weight: 400;
+            src: url('/static/source-code-pro-v23-latin-regular.woff2') format('woff2');
+        }
+        code { font-family: 'Source Code Pro', monospace; }
+    </style>
+</head>
+<body>
+    <pre><code class="language-%s">%s</code></pre>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>`, language, html.EscapeString(content))
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, html)
 }
