@@ -27,19 +27,18 @@ type store struct {
 	counter  int
 }
 
-func newStore() *store {
-	return &store{
-		snippets: make(map[string]string),
-		counter:  1,
-	}
-}
-
 func constructURL(r *http.Request, id string) string {
-	return fmt.Sprintf("%s%s/%s", "https://", r.Host, id)
+	scheme := "http"
+
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+
+	return fmt.Sprintf("%s://%s/%s", scheme, r.Host, id)
 }
 
 func main() {
-	ps := newPermanentStore()
+	ps := newStore()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Path[1:]

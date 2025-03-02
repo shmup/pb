@@ -23,13 +23,13 @@ const (
 	idChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
-type permanentStore struct {
+type Store struct {
 	sync.RWMutex
 	index map[string]string
 }
 
-func newPermanentStore() *permanentStore {
-	ps := &permanentStore{
+func newStore() *Store {
+	ps := &Store{
 		index: loadIndex(),
 	}
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
@@ -58,7 +58,7 @@ func loadIndex() map[string]string {
 	return index
 }
 
-func (ps *permanentStore) saveIndex() {
+func (ps *Store) saveIndex() {
 	ps.Lock()
 	defer ps.Unlock()
 
@@ -80,7 +80,7 @@ func init() {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
-func (ps *permanentStore) generateID() string {
+func (ps *Store) generateID() string {
 	ps.Lock()
 	defer ps.Unlock()
 
@@ -111,7 +111,7 @@ func (ps *permanentStore) generateID() string {
 	}
 }
 
-func (ps *permanentStore) createSnippet(content string) string {
+func (ps *Store) createSnippet(content string) string {
 	hash := contentHash(content)
 
 	ps.RLock()
@@ -132,7 +132,7 @@ func (ps *permanentStore) createSnippet(content string) string {
 	return id
 }
 
-func (ps *permanentStore) saveSnippet(id, content string) {
+func (ps *Store) saveSnippet(id, content string) {
 	filePath := filepath.Join(baseDir, id)
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
@@ -140,7 +140,7 @@ func (ps *permanentStore) saveSnippet(id, content string) {
 	}
 }
 
-func (ps *permanentStore) getSnippet(id string) (string, bool) {
+func (ps *Store) getSnippet(id string) (string, bool) {
 	ps.RLock()
 	defer ps.RUnlock()
 
@@ -156,7 +156,7 @@ func (ps *permanentStore) getSnippet(id string) (string, bool) {
 	return string(content), true
 }
 
-func (ps *permanentStore) updateSnippet(id, newContent string) bool {
+func (ps *Store) updateSnippet(id, newContent string) bool {
 	ps.Lock()
 	_, exists := ps.index[id]
 	if !exists {
@@ -179,7 +179,7 @@ func (ps *permanentStore) updateSnippet(id, newContent string) bool {
 	return true
 }
 
-func (ps *permanentStore) deleteSnippet(id string) bool {
+func (ps *Store) deleteSnippet(id string) bool {
 	ps.Lock()
 	_, exists := ps.index[id]
 	if !exists {
