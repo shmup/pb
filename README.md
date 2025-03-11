@@ -15,3 +15,9 @@ EXAMPLES:
 - curl -X PUT --data "potato" http://localhost:8080/1
 - curl -X DELETE http://localhost:8080/1
 ```
+
+**SYNTAX HIGHLIGHTING:**
+
+while not perfect, if you tag the /extension to the end of the URL, it may highlight the text!
+
+i.e. `/py` or `/md`
