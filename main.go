@@ -152,10 +152,10 @@ func serveWithHighlighting(w http.ResponseWriter, content, language string) {
     <style>
         body { margin: 0; padding: 0; background-color: #000; color: #fff; }
         pre { margin: 0; padding: 0; }
-	::selection {
-	  background-color: white;
-	  color: black;
-	}
+        ::selection {
+          background-color: white;
+          color: black;
+        }
         @font-face {
             font-family: 'Source Code Pro';
             font-style: normal;
@@ -169,7 +169,7 @@ func serveWithHighlighting(w http.ResponseWriter, content, language string) {
     <pre><code class="language-%s">%s</code></pre>
     <script>hljs.highlightAll();</script>
 </body>
-</html>`, language, html.EscapeString(content))
+</html>`, html.EscapeString(language), html.EscapeString(content))
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, html)
