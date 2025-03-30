@@ -46,9 +46,6 @@ func loadPasswords() map[string]string {
 }
 
 func (ps *Store) savePasswords() {
-	ps.Lock()
-	defer ps.Unlock()
-
 	var sb strings.Builder
 	for id, password := range ps.passwords {
 		sb.WriteString(id)
@@ -123,9 +120,6 @@ func loadOwners() map[string]string {
 }
 
 func (ps *Store) saveIndex() {
-	ps.Lock()
-	defer ps.Unlock()
-
 	var sb strings.Builder
 	for id, hash := range ps.index {
 		sb.WriteString(id)
@@ -141,9 +135,6 @@ func (ps *Store) saveIndex() {
 }
 
 func (ps *Store) saveOwners() {
-	ps.Lock()
-	defer ps.Unlock()
-
 	var sb strings.Builder
 	for id, owner := range ps.owners {
 		sb.WriteString(id)
@@ -254,6 +245,81 @@ func (ps *Store) getSnippet(id string) (string, bool) {
 	return string(content), true
 }
 
+func (ps *Store) deleteSnippet(id string, username string, password string) bool {
+	ps.Lock()
+	_, exists := ps.index[id]
+	if !exists {
+		ps.Unlock()
+		return false
+	}
+
+	// Check if the snippet has an owner
+	owner, hasOwner := ps.owners[id]
+	storedPassword, hasPassword := ps.passwords[id]
+
+	// If it has an owner, authentication is required
+	if hasOwner {
+		if username == "" {
+			// No authentication provided
+			ps.Unlock()
+			return false
+		}
+
+		// Strict check: require username match AND the ORIGINAL password match
+		if owner != username || (hasPassword && storedPassword != password) {
+			// Either wrong username or the password doesn't match what was stored originally
+			ps.Unlock()
+			return false
+		}
+	}
+
+	delete(ps.index, id)
+	delete(ps.owners, id)
+	delete(ps.passwords, id)
+
+	// Save before unlocking to prevent race conditions
+	var sb strings.Builder
+
+	// Save index
+	for id, hash := range ps.index {
+		sb.WriteString(id)
+		sb.WriteString(" ")
+		sb.WriteString(hash)
+		sb.WriteString("\n")
+	}
+	os.WriteFile(indexFileName, []byte(sb.String()), 0644)
+
+	// Save owners
+	sb.Reset()
+	for id, owner := range ps.owners {
+		sb.WriteString(id)
+		sb.WriteString(" ")
+		sb.WriteString(owner)
+		sb.WriteString("\n")
+	}
+	os.WriteFile(ownersFileName, []byte(sb.String()), 0644)
+
+	// Save passwords
+	sb.Reset()
+	for id, password := range ps.passwords {
+		sb.WriteString(id)
+		sb.WriteString(" ")
+		sb.WriteString(password)
+		sb.WriteString("\n")
+	}
+	os.WriteFile(passwordsFileName, []byte(sb.String()), 0644)
+
+	ps.Unlock()
+
+	go func() {
+		if err := os.Remove(filepath.Join(baseDir, id)); err != nil {
+			log.Printf("Failed to remove file: %v", err)
+		}
+	}()
+
+	return true
+}
+
 func (ps *Store) updateSnippet(id, newContent string, username string, password string) bool {
 	ps.Lock()
 	_, exists := ps.index[id]
@@ -262,14 +328,15 @@ func (ps *Store) updateSnippet(id, newContent string, username string, password 
 		return false
 	}
 
-	// check ownership and password if username is provided
+	// Check ownership and password if username is provided
 	if username != "" {
 		owner, hasOwner := ps.owners[id]
 		storedPassword, hasPassword := ps.passwords[id]
 
+		// Strict check: require exact match with the ORIGINAL stored password
 		if hasOwner && (owner != username || (hasPassword && storedPassword != password)) {
 			ps.Unlock()
-			return false // not the owner or wrong password
+			return false // not the owner or doesn't match original password
 		}
 	}
 
@@ -284,7 +351,7 @@ func (ps *Store) updateSnippet(id, newContent string, username string, password 
 	// update owner if authenticated
 	if username != "" {
 		ps.owners[id] = username
-		ps.passwords[id] = password
+		ps.passwords[id] = password // Update to the new password
 	}
 	ps.Unlock()
 
@@ -292,47 +359,6 @@ func (ps *Store) updateSnippet(id, newContent string, username string, password 
 	ps.saveOwners()
 	ps.savePasswords()
 	ps.saveSnippet(id, newContent)
-
-	return true
-}
-
-func (ps *Store) deleteSnippet(id string, username string, password string) bool {
-	ps.Lock()
-	_, exists := ps.index[id]
-	if !exists {
-		ps.Unlock()
-		return false
-	}
-
-	// check ownership and password if username is provided
-	if username != "" {
-		owner, hasOwner := ps.owners[id]
-		storedPassword, hasPassword := ps.passwords[id]
-
-		if hasOwner && (owner != username || (hasPassword && storedPassword != password)) {
-			ps.Unlock()
-			return false // not the owner or wrong password
-		}
-	} else {
-		// If no authentication provided, don't allow deletion
-		ps.Unlock()
-		return false
-	}
-
-	delete(ps.index, id)
-	delete(ps.owners, id)
-	delete(ps.passwords, id)
-	ps.Unlock()
-
-	ps.saveIndex()
-	ps.saveOwners()
-	ps.savePasswords()
-
-	go func() {
-		if err := os.Remove(filepath.Join(baseDir, id)); err != nil {
-			log.Printf("Failed to remove file: %v", err)
-		}
-	}()
 
 	return true
 }
