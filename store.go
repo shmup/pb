@@ -18,19 +18,63 @@ import (
 )
 
 const (
-	indexFileName = "index.txt"
-	baseDir       = "data"
-	idChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	baseDir           = "data"
+	idChars           = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	indexFileName     = "index.txt"
+	ownersFileName    = "owners.txt"
+	passwordsFileName = "passwords.txt" // New file to track passwords
 )
+
+func loadPasswords() map[string]string {
+	content, err := os.ReadFile(passwordsFileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]string)
+		}
+		panic("unable to read passwords file: " + err.Error())
+	}
+
+	lines := strings.Split(string(content), "\n")
+	passwords := make(map[string]string)
+	for _, line := range lines {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 && parts[0] != "" {
+			passwords[parts[0]] = parts[1]
+		}
+	}
+	return passwords
+}
+
+func (ps *Store) savePasswords() {
+	ps.Lock()
+	defer ps.Unlock()
+
+	var sb strings.Builder
+	for id, password := range ps.passwords {
+		sb.WriteString(id)
+		sb.WriteString(" ")
+		sb.WriteString(password)
+		sb.WriteString("\n")
+	}
+
+	err := os.WriteFile(passwordsFileName, []byte(sb.String()), 0644)
+	if err != nil {
+		panic("unable to write passwords file: " + err.Error())
+	}
+}
 
 type Store struct {
 	sync.RWMutex
-	index map[string]string
+	index     map[string]string
+	owners    map[string]string
+	passwords map[string]string // Add passwords map to track passwords per snippet
 }
 
 func newStore() *Store {
 	ps := &Store{
-		index: loadIndex(),
+		index:     loadIndex(),
+		owners:    loadOwners(),
+		passwords: loadPasswords(),
 	}
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		panic("unable to create base directory for storage: " + err.Error())
@@ -51,11 +95,31 @@ func loadIndex() map[string]string {
 	index := make(map[string]string)
 	for _, line := range lines {
 		parts := strings.SplitN(line, " ", 2)
-		if len(parts) == 2 {
+		if len(parts) == 2 && parts[0] != "" {
 			index[parts[0]] = parts[1]
 		}
 	}
 	return index
+}
+
+func loadOwners() map[string]string {
+	content, err := os.ReadFile(ownersFileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]string)
+		}
+		panic("unable to read owners file: " + err.Error())
+	}
+
+	lines := strings.Split(string(content), "\n")
+	owners := make(map[string]string)
+	for _, line := range lines {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 2 && parts[0] != "" {
+			owners[parts[0]] = parts[1]
+		}
+	}
+	return owners
 }
 
 func (ps *Store) saveIndex() {
@@ -73,6 +137,24 @@ func (ps *Store) saveIndex() {
 	err := os.WriteFile(indexFileName, []byte(sb.String()), 0644)
 	if err != nil {
 		panic("unable to write index file: " + err.Error())
+	}
+}
+
+func (ps *Store) saveOwners() {
+	ps.Lock()
+	defer ps.Unlock()
+
+	var sb strings.Builder
+	for id, owner := range ps.owners {
+		sb.WriteString(id)
+		sb.WriteString(" ")
+		sb.WriteString(owner)
+		sb.WriteString("\n")
+	}
+
+	err := os.WriteFile(ownersFileName, []byte(sb.String()), 0644)
+	if err != nil {
+		panic("unable to write owners file: " + err.Error())
 	}
 }
 
@@ -111,12 +193,22 @@ func (ps *Store) generateID() string {
 	}
 }
 
-func (ps *Store) createSnippet(content string) string {
+func (ps *Store) createSnippet(content string, owner string, password string) string {
 	hash := contentHash(content)
 
 	ps.RLock()
 	for id, existingHash := range ps.index {
 		if existingHash == hash {
+			// if finding existing content, check if we should update ownership
+			if owner != "" && (ps.owners[id] == "" || (ps.owners[id] == owner && ps.passwords[id] == password)) {
+				ps.RUnlock()
+				ps.Lock()
+				ps.owners[id] = owner
+				ps.passwords[id] = password
+				ps.Unlock()
+				ps.saveOwners()
+				ps.savePasswords()
+			}
 			ps.RUnlock()
 			return id
 		}
@@ -126,8 +218,14 @@ func (ps *Store) createSnippet(content string) string {
 	id := ps.generateID()
 	ps.Lock()
 	ps.index[id] = hash
+	if owner != "" {
+		ps.owners[id] = owner
+		ps.passwords[id] = password
+	}
 	ps.Unlock()
 	ps.saveIndex()
+	ps.saveOwners()
+	ps.savePasswords()
 	ps.saveSnippet(id, content)
 	return id
 }
@@ -156,13 +254,25 @@ func (ps *Store) getSnippet(id string) (string, bool) {
 	return string(content), true
 }
 
-func (ps *Store) updateSnippet(id, newContent string) bool {
+func (ps *Store) updateSnippet(id, newContent string, username string, password string) bool {
 	ps.Lock()
 	_, exists := ps.index[id]
 	if !exists {
 		ps.Unlock()
 		return false
 	}
+
+	// check ownership and password if username is provided
+	if username != "" {
+		owner, hasOwner := ps.owners[id]
+		storedPassword, hasPassword := ps.passwords[id]
+
+		if hasOwner && (owner != username || (hasPassword && storedPassword != password)) {
+			ps.Unlock()
+			return false // not the owner or wrong password
+		}
+	}
+
 	newHash := contentHash(newContent)
 	oldHash := ps.index[id]
 	if oldHash == newHash {
@@ -171,15 +281,22 @@ func (ps *Store) updateSnippet(id, newContent string) bool {
 	}
 
 	ps.index[id] = newHash
+	// update owner if authenticated
+	if username != "" {
+		ps.owners[id] = username
+		ps.passwords[id] = password
+	}
 	ps.Unlock()
 
 	ps.saveIndex()
+	ps.saveOwners()
+	ps.savePasswords()
 	ps.saveSnippet(id, newContent)
 
 	return true
 }
 
-func (ps *Store) deleteSnippet(id string) bool {
+func (ps *Store) deleteSnippet(id string, username string, password string) bool {
 	ps.Lock()
 	_, exists := ps.index[id]
 	if !exists {
@@ -187,10 +304,29 @@ func (ps *Store) deleteSnippet(id string) bool {
 		return false
 	}
 
+	// check ownership and password if username is provided
+	if username != "" {
+		owner, hasOwner := ps.owners[id]
+		storedPassword, hasPassword := ps.passwords[id]
+
+		if hasOwner && (owner != username || (hasPassword && storedPassword != password)) {
+			ps.Unlock()
+			return false // not the owner or wrong password
+		}
+	} else {
+		// If no authentication provided, don't allow deletion
+		ps.Unlock()
+		return false
+	}
+
 	delete(ps.index, id)
+	delete(ps.owners, id)
+	delete(ps.passwords, id)
 	ps.Unlock()
 
 	ps.saveIndex()
+	ps.saveOwners()
+	ps.savePasswords()
 
 	go func() {
 		if err := os.Remove(filepath.Join(baseDir, id)); err != nil {

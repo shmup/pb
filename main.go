@@ -1,13 +1,8 @@
-// Simple HTTP CRUD API for managing text snippets.
-//
-// This program creates an in-memory snippet store with CRUD operations exposed over HTTP.
-// Supported methods:
+// simple in-memory snippet store with CRUD operations exposed over HTTP
 // - POST to create a new snippet
 // - GET to retrieve an existing snippet by ID
 // - PUT to update an existing snippet by ID
 // - DELETE to remove an existing snippet by ID
-//
-// The server starts on port 8080 and responds to the above HTTP methods at the root path.
 package main
 
 import (
@@ -19,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -39,6 +35,60 @@ func constructURL(r *http.Request, id string) string {
 	return fmt.Sprintf("%s://%s/%s", scheme, r.Host, id)
 }
 
+func authenticateUser(r *http.Request) (string, string, bool) {
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		return "", "", false
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Error getting home directory: %v", err)
+		return "", "", false
+	}
+
+	netrcPath := filepath.Join(homeDir, ".netrc")
+	netrcData, err := os.ReadFile(netrcPath)
+	if err != nil {
+		log.Printf("Error reading .netrc file: %v", err)
+		return "", "", false
+	}
+
+	// Simple parser for .netrc format
+	lines := strings.Split(string(netrcData), "\n")
+	currentMachine := ""
+	netrcUser := ""
+	netrcPass := ""
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		for i := 0; i < len(fields); i++ {
+			if fields[i] == "machine" && i+1 < len(fields) {
+				currentMachine = fields[i+1]
+				i++
+			} else if fields[i] == "login" && i+1 < len(fields) && currentMachine == r.Host {
+				netrcUser = fields[i+1]
+				i++
+			} else if fields[i] == "password" && i+1 < len(fields) && currentMachine == r.Host {
+				netrcPass = fields[i+1]
+				i++
+			}
+		}
+	}
+
+	// Validate credentials against .netrc
+	if username == netrcUser && password == netrcPass {
+		return username, password, true
+	}
+
+	return "", "", false
+}
+
 func main() {
 	ps := newStore()
 	mux := http.NewServeMux()
@@ -47,17 +97,23 @@ func main() {
 	mux.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// try to authenticate
+		username, password, authenticated := authenticateUser(r)
+		if !authenticated {
+			username = "" // ensure it's empty if auth failed
+			password = ""
+		}
 
 		path := r.URL.Path[1:]
 
-		// Check if this is a syntax highlighting request
+		// check if this is a syntax highlighting request
 		parts := strings.SplitN(path, "/", 2)
 		if len(parts) == 2 {
 			id := parts[0]
 			language := parts[1]
 
 			if content, ok := ps.getSnippet(id); ok {
-				// Serve with syntax highlighting
+				// serve with syntax highlighting
 				serveWithHighlighting(w, content, language)
 				log.Printf("Fetched %s with %s highlighting", id, language)
 				return
@@ -66,7 +122,7 @@ func main() {
 			return
 		}
 
-		// Original CRUD logic continues here
+		// original CRUD logic continues here
 		id := path
 
 		switch r.Method {
@@ -76,9 +132,9 @@ func main() {
 				http.Error(w, "Failed to read request body", http.StatusBadRequest)
 				return
 			}
-			id := ps.createSnippet(string(body))
+			id := ps.createSnippet(string(body), username, password)
 			url := constructURL(r, id)
-			log.Printf("Created: %s", url)
+			log.Printf("Created: %s by %s", url, username)
 			w.Header().Set("Location", url)
 			w.WriteHeader(http.StatusCreated)
 			fmt.Fprint(w, url)
@@ -89,12 +145,16 @@ func main() {
 				http.Error(w, "Failed to read request body", http.StatusBadRequest)
 				return
 			}
-			if ps.updateSnippet(id, string(body)) {
+			if ps.updateSnippet(id, string(body), username, password) {
 				url := constructURL(r, id)
 				fmt.Fprint(w, url)
-				log.Printf("Updated %s", id)
+				log.Printf("Updated %s by %s", id, username)
 			} else {
-				http.NotFound(w, r)
+				if authenticated {
+					http.Error(w, "Not authorized or snippet not found", http.StatusForbidden)
+				} else {
+					http.NotFound(w, r)
+				}
 			}
 
 		case http.MethodGet:
@@ -107,12 +167,17 @@ func main() {
 			}
 
 		case http.MethodDelete:
-			if ps.deleteSnippet(id) {
+			if ps.deleteSnippet(id, username, password) {
 				url := constructURL(r, id)
 				fmt.Fprint(w, url)
-				log.Printf("Deleted %s", id)
+				log.Printf("Deleted %s by %s", id, username)
 			} else {
-				http.NotFound(w, r)
+				if authenticated {
+					http.Error(w, "Not authorized or snippet not found", http.StatusForbidden)
+				} else {
+					w.WriteHeader(http.StatusUnauthorized)
+					fmt.Fprint(w, "Authentication required for deletion")
+				}
 			}
 
 		default:
