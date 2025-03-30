@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# usage: pb [-d ID] [-i ID] [-n N] [opts]
+#     -d ID delete the file with the given ID
+#     -i ID upload a file with the given ID
+#     -n N  set the read count to N
+#     opts  additional curl options
+
+# example ~/.netrc
+#   machine no.dungeon.red
+#   login piss
+#   password whistler
+
+url="https://no.dungeon.red"
+
+[ -f "$HOME/.netrc" ] && auth_opts='-n'
+
+while getopts ":hd:i:n:" x; do
+  case $x in
+  h)
+    echo "ix [-d ID] [-i ID] [-n N] [opts]"
+    return
+    ;;
+  d)
+    curl $auth_opts -s -X DELETE "$url/$OPTARG"
+    return
+    ;;
+  i)
+    method_opts="-X PUT"
+    local id="$OPTARG"
+    ;;
+  n)
+    read_opts="-F read:1=$OPTARG"
+    ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# handle file input or stdin
+if [ -t 0 ]; then
+  local filename="$1"
+  shift
+  if [ "$filename" ]; then
+    curl $auth_opts $method_opts -F "f:1=@$filename" $read_opts $* "$url/$id"
+    return
+  fi
+  echo "^C to cancel, ^D to send."
+fi
+
+curl $auth_opts $method_opts --data-binary @- "$url/$id"
+echo
