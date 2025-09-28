@@ -22,7 +22,7 @@ const (
 	idChars           = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	indexFileName     = "index.txt"
 	ownersFileName    = "owners.txt"
-	passwordsFileName = "passwords.txt" // New file to track passwords
+	passwordsFileName = "passwords.txt"
 )
 
 type Store struct {

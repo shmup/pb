@@ -22,7 +22,6 @@ func createMainHandler(ps *Store, readCounter *ReadCounter) http.HandlerFunc {
 		username, password, _ := authenticateUser(r)
 		path := r.URL.Path[1:]
 
-		// Handle user listings
 		if strings.HasPrefix(path, "user/") {
 			userParts := strings.SplitN(path, "/", 3)
 			if len(userParts) >= 2 {
@@ -31,13 +30,13 @@ func createMainHandler(ps *Store, readCounter *ReadCounter) http.HandlerFunc {
 			}
 		}
 
-		// Handle console highlighting with + syntax
+		// handle console highlighting with + syntax
 		if strings.Contains(path, "+") {
 			handleSyntaxHighlighting(w, r, path, ps, readCounter)
 			return
 		}
 
-		// Handle regular syntax highlighting
+		// handle regular syntax highlighting
 		if parts := strings.SplitN(path, "/", 2); len(parts) == 2 {
 			if content, ok := ps.getSnippet(parts[0]); ok {
 				serveWithHighlighting(w, content, parts[1])

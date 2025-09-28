@@ -27,7 +27,7 @@ func serveWithHighlighting(w http.ResponseWriter, content, language string) {
     <link rel="stylesheet" href="/static/tomorrow-night-bright.min.css">
     <script src="/static/highlight.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: #000; color: #fff; }
+        body { margin: 0; padding: 10px 20px; background-color: #000; color: #fff; }
         pre { margin: 0; padding: 0; }
         ::selection { background-color: white; color: black; }
         @font-face {
