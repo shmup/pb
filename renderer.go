@@ -28,7 +28,7 @@ func serveWithHighlighting(w http.ResponseWriter, content, language string) {
     <script src="/static/highlight.min.js"></script>
     <style>
         body { margin: 0; padding: 10px 20px; background-color: #000; color: #fff; }
-        pre { margin: 0; padding: 0; }
+        pre { margin: 0; padding: 0; white-space: pre-wrap; word-wrap: break-word; }
         ::selection { background-color: white; color: black; }
         @font-face {
             font-family: 'Source Code Pro';
